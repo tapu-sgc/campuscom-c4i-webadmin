@@ -58,6 +58,11 @@ export function FormDropDown(
   }, [options, refLookupService])
 
   useEffect(() => {
+    loadOptions()
+    // eslint-disable-next-line
+  }, [props.options])
+
+  useEffect(() => {
     if (!props.refLookupDependencies) loadOptions()
     const eventName = `REFRESH_SEARCH_DROPDOWN_${(refLookupService || new Date().getTime())?.toString() + displayKey + valueKey + props.fieldName
       }`

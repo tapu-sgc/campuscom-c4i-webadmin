@@ -10,9 +10,14 @@ import { processTableMetaWithUserMetaConfig } from "~/packages/components/Respon
 import { objectToQueryString } from "~/packages/utils/ObjectToQueryStringConverter"
 import { querystringToObject } from "~/packages/utils/QueryStringToObjectConverter"
 import { getAndScrollToPosition } from "~/packages/components/ResponsiveTable/ManageScroll"
+import { Table } from "~/WC/Table"
+
+export interface IConditionalProps extends TableProps<{ [key: string]: string }> {
+  columns?: IDataTableProps['columns'] & TableColumnType
+}
 
 const DEFAULT_PAGE_SIZE = 20
-export const ResponsiveTable = (props: IDataTableProps) => {
+export const ResponsiveTable = (props: IDataTableProps & { useWC?: boolean }) => {
   const [desktopView, setDesktopView] = useState(true)
   useDeviceViews((deviceViews: IDeviceView) => {
     setDesktopView(deviceViews.desktop)
@@ -82,9 +87,9 @@ export const ResponsiveTable = (props: IDataTableProps) => {
     // eslint-disable-next-line
   }, [])
 
-  const [conditionalProps, setConditionalProps] = useState<TableProps<{ [key: string]: string }>>({})
+  const [conditionalProps, setConditionalProps] = useState<IConditionalProps>({})
   const setTableProps = (columnsConfigByUser: TableColumnType, data: any = []) => {
-    const _conditionalProps: TableProps<{ [key: string]: string }> = {
+    const _conditionalProps: IConditionalProps = {
       ...props,
       columns: columnsConfigByUser.map((x) => {
         if (x.title === "" || !x.title || x.title === "Action" || x.title === "Published" || props.disableSorting) {
@@ -114,7 +119,32 @@ export const ResponsiveTable = (props: IDataTableProps) => {
     setConditionalProps(_conditionalProps)
   }
 
-  const paginationChange = (page: number, pageSize = DEFAULT_PAGE_SIZE) => {
+  const sortData = (sortByDataIndex: string, sortOrder: "asc" | "desc") => {
+    const sorter = props.columns.find(c => c.dataIndex === sortByDataIndex)?.sorter
+
+    const sortedDataSource = (conditionalProps.dataSource as any[]).sort((a: any, b: any) => {
+      if (typeof sorter === 'function') {
+        return sortOrder === "asc" ? sorter(a[sortByDataIndex], b[sortByDataIndex])
+          : sorter(b[sortByDataIndex], a[sortByDataIndex])
+      }
+      const aa =
+        a[sortByDataIndex] === undefined || a[sortByDataIndex] === null || a[sortByDataIndex] === false
+          ? ""
+          : String(a[sortByDataIndex])
+      const bb =
+        b[sortByDataIndex] === undefined || b[sortByDataIndex] === null || b[sortByDataIndex] === false
+          ? ""
+          : String(b[sortByDataIndex])
+      return sortOrder === "asc" ? aa.localeCompare(bb) : bb.localeCompare(aa)
+    })
+    setConditionalProps({
+      ...conditionalProps,
+      dataSource: sortedDataSource
+    })
+    paginationChange(1, DEFAULT_PAGE_SIZE, sortedDataSource)
+  }
+
+  const paginationChange = (page: number, pageSize = DEFAULT_PAGE_SIZE, sortedData?: any[]) => {
     if (props.setCurrentPagination) props.setCurrentPagination(page)
     else setCurrentPagination(page)
 
@@ -122,7 +152,10 @@ export const ResponsiveTable = (props: IDataTableProps) => {
     const _queryString = objectToQueryString(Object.keys(quaryParams).length > 0 ? quaryParams : null)
     window.history && window.history.pushState({}, "", _queryString)
 
-    if (conditionalProps && Array.isArray(conditionalProps.dataSource)) {
+    if (sortedData && Array.isArray(sortedData)) {
+      const __dataSource = sortedData.slice(page === 1 ? 0 : page * pageSize - pageSize, page * pageSize)
+      setPaginatedData(__dataSource)
+    } else if (conditionalProps && Array.isArray(conditionalProps.dataSource)) {
       const __dataSource = conditionalProps.dataSource.slice(
         page === 1 ? 0 : page * pageSize - pageSize,
         page * pageSize
@@ -130,11 +163,12 @@ export const ResponsiveTable = (props: IDataTableProps) => {
       setPaginatedData(__dataSource)
     }
   }
-  return desktopView || conditionalProps.rowSelection ? (
-    <TableViewForDesktop
+
+  return props.useWC ?
+    <Table
       {...props}
       title={() => props.title || props.tableName}
-      loading={props.loading || loading}
+      loading={!!props.loading || loading}
       currentPagination={props.currentPagination || currentPagination}
       conditionalProps={conditionalProps}
       setConditionalProps={setConditionalProps}
@@ -142,18 +176,33 @@ export const ResponsiveTable = (props: IDataTableProps) => {
       setDownloading={setDownloading}
       paginatedData={paginatedData}
       paginationChange={paginationChange}
-    />
-  ) : (
-    <ListViewforMobile
-      {...props}
-      loading={props.loading || loading}
-      currentPagination={props.currentPagination || currentPagination}
-      conditionalProps={conditionalProps}
-      setConditionalProps={setConditionalProps}
-      downloading={downloading}
-      setDownloading={setDownloading}
-      paginatedData={paginatedData}
-      paginationChange={paginationChange}
-    />
-  )
+      sortData={sortData}
+      rowActions={props.rowActions}
+    /> :
+    desktopView || conditionalProps.rowSelection ? (
+      <TableViewForDesktop
+        {...props}
+        title={() => props.title || props.tableName}
+        loading={props.loading || loading}
+        currentPagination={props.currentPagination || currentPagination}
+        conditionalProps={conditionalProps}
+        setConditionalProps={setConditionalProps}
+        downloading={downloading}
+        setDownloading={setDownloading}
+        paginatedData={paginatedData}
+        paginationChange={paginationChange}
+      />
+    ) : (
+      <ListViewforMobile
+        {...props}
+        loading={props.loading || loading}
+        currentPagination={props.currentPagination || currentPagination}
+        conditionalProps={conditionalProps}
+        setConditionalProps={setConditionalProps}
+        downloading={downloading}
+        setDownloading={setDownloading}
+        paginatedData={paginatedData}
+        paginationChange={paginationChange}
+      />
+    )
 }

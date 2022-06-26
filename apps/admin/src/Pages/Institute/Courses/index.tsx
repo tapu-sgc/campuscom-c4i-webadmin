@@ -27,7 +27,7 @@ export const List = () => {
       <SearchPage
         title={"Courses"}
         meta={CourseSearchMeta}
-
+        useWC
         tableProps={{
           ...getCourseListTableColumns(),
           actions: [

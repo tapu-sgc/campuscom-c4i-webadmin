@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "dependencies": {
+    "@freshworks/crayons": "3",
     "@packages/api": "1.0.0",
     "@packages/components": "1.0.0",
     "@packages/utilities": "1.0.0",

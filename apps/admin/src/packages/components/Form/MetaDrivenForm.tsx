@@ -1,5 +1,5 @@
 import { Button, Card, Col, Form, Row } from "antd"
-import React, { useCallback, useEffect, useState } from "react"
+import React, { useCallback, useEffect, useRef, useState } from "react"
 import {
   IField,
   DATE_PICKER,
@@ -44,6 +44,7 @@ import { SidebarMenuTargetHeading } from "~/packages/components/SidebarNavigatio
 import { FormFileUpload } from "./FormFileUpload"
 import { FormEditorInput } from "./FormEditorInput"
 import { FormGroupedMultipleCheckbox } from "./FormGroupedMultipleCheckbox"
+import { FwButton, FwForm } from "@freshworks/crayons/react"
 
 export function MetaDrivenForm({
   showClearbutton = true,
@@ -73,6 +74,7 @@ export function MetaDrivenForm({
   stopProducingQueryParams?: boolean
   autoApplyChangeFromQueryParams?: boolean
   errorMessages?: Array<ISimplifiedApiErrorMessage>
+  useWC?: boolean
 }) {
   const [formInstance] = Form.useForm()
   const [showLess, setShowLess] = useState(true)
@@ -81,7 +83,10 @@ export function MetaDrivenForm({
   const REFRESH_EVENT_NAME = generateUUID("REFRESH")
   const formId = generateUUID(props.metaName)
   const [dependencyValue, _setDependencyValue] = useState<{ [key: string]: any }>({})
-  const [initialFormValue, setInitialFormValue] = useState()
+  const [initialFormValue, setInitialFormValue] = useState<{ [key: string]: any }>()
+  const formRef = useRef<HTMLFwFormElement>(null)
+  const [fields, setFields] = useState<any[]>([])
+  const isMounted = useRef(false)
 
   const checkValidationOnCustomFormFields = (values: { [key: string]: any }): boolean => {
     let validationPassed = true
@@ -160,6 +165,35 @@ export function MetaDrivenForm({
       })
   }
 
+  const handleSubmit = async (e: React.MouseEvent<HTMLFwButtonElement, MouseEvent>) => {
+    if (!formRef.current) return
+    const { values, isValid } = await formRef.current.doSubmit(e)
+    if (!isValid || !checkValidationOnCustomFormFields(values)) return
+
+    applyChanges2(values)
+  }
+
+  const applyChanges2 = async (values: { [key: string]: any }) => {
+    const params: { [key: string]: any } = values
+    const mergedParams: { [key: string]: any } = {
+      ...params,
+      ...props.defaultFormValue
+    }
+    for (const key in mergedParams) {
+      if (key === "" || mergedParams[key] === undefined || mergedParams[key] === null || mergedParams[key] === "")
+        delete mergedParams[key]
+    }
+    if (props.currentPagination) mergedParams["pagination"] = props.currentPagination
+    props.onApplyChanges(mergedParams)
+    setInitialFormValue(mergedParams)
+
+    if (!props.stopProducingQueryParams) {
+      const _queryString = objectToQueryString(Object.keys(mergedParams).length ? mergedParams : null)
+      window.history && window.history.pushState({}, "", _queryString)
+    }
+  }
+
+
   const clearParams = () => {
     const dontReset = (fieldName: string) => {
       const meta = props.meta.find((x) => x.fieldName === fieldName)
@@ -214,7 +248,7 @@ export function MetaDrivenForm({
       })
       if (onlyPaginationExist) setShowLess(true)
       else setShowLess(false)
-      if (props.autoApplyChangeFromQueryParams) applyChanges(queryParams)
+      if (props.autoApplyChangeFromQueryParams) props.useWC ? applyChanges(queryParams) : applyChanges2(queryParams)
     } else if (props.closeModal) {
       setShowLess(false)
     }
@@ -249,7 +283,8 @@ export function MetaDrivenForm({
   }, [setDependencyValue])
 
   useEffect(() => {
-    if (props.loading || !initialFormValue) return
+    if (isMounted.current || props.loading || !initialFormValue) return
+    isMounted.current = true
     setDependencyValue(initialFormValue)
 
     eventBus.subscribe(REFRESH_EVENT_NAME, processMeta)
@@ -271,8 +306,58 @@ export function MetaDrivenForm({
       ...props.defaultFormValue,
       ...defaultValues,
       ...props.initialFormValue,
+      ...(!props.stopProducingQueryParams && querystringToObject())
     })
-  }, [props.initialFormValue, props.defaultFormValue, props.meta])
+  }, [props.initialFormValue, props.defaultFormValue, props.stopProducingQueryParams, props.meta])
+
+  const lookupFields = props.meta.reduce((a, c) => {
+    if (c.refLookupService) a.push(c)
+    return a
+  }, [] as IField[])
+
+  const performLookup = () => {
+    Promise.all(lookupFields.map(i => i.refLookupService?.())).then(responses => {
+      setFields((prevVal) => {
+        const parsed = responses.reduce((a, c, idx) => {
+          if (c?.success) {
+            const l = lookupFields[idx]
+            a.push({ name: l.fieldName, label: l.label, type: l.inputType, choices: c?.data.map((o: any) => ({ text: o[l.displayKey || "name"], value: o[l.valueKey || "id"] })) })
+          }
+          return a
+        }, [] as any[])
+
+        return prevVal.map(pv => parsed.find(p => p?.name === pv.name) || pv)
+      })
+    })
+  }
+
+  useEffect(() => {
+    if (!props.useWC) return
+    const eventName = `REFRESH_SEARCH_DROPDOWN_${(new Date().getTime())?.toString() + lookupFields.map(l => `${l.displayKey} ${l.valueKey} ${l.refLookupService}`)
+      }`
+    eventBus.subscribe(eventName, performLookup)
+    return () => {
+      eventBus.unsubscribe(eventName)
+    }
+    // eslint-disable-next-line
+  }, [])
+
+  useEffect(() => {
+    if (!props.useWC) return
+    setFields(props.meta.map(f => ({
+      name: f.fieldName,
+      label: f.label,
+      type: f.inputType,
+      choices: f.options?.map(o => ({ text: o.label, value: o.value }))
+    })))
+    performLookup()
+
+    const style = document.createElement('style')
+    style.innerHTML = "form {display: flex; flex-wrap: wrap;} fw-form-control {flex-basis: 50%; padding: 0 10px; margin: -.5em 0;}"
+    formRef.current?.shadowRoot?.appendChild(style)
+    // eslint-disable-next-line
+  }, [props.useWC, props.meta])
+
 
   return (
     <Card
@@ -353,31 +438,16 @@ export function MetaDrivenForm({
         ]
       })}
     >
-
-      <Form
-        id={formId}
-        layout="horizontal"
-        initialValues={initialFormValue}
-        form={formInstance}
-        scrollToFirstError
-        style={{
-          ...(props.isModal && { maxHeight: "66vh", overflowY: "auto" }),
-          background: "white",
-          borderRadius: "4px",
-          padding: "10px"
-        }}
-        onValuesChange={handleValuesChange}
-      >
-        <FormError errorMessages={props.errorMessages} />
-        <SearchFormFields
-          meta={meta}
-          isHorizontal={props.isHorizontal}
-          formInstance={formInstance}
-          clearTrigger={clearTrigger}
-          showLess={showLess}
-          dependencyValue={dependencyValue}
-        />
-        {!(props.isModal || props.closeModal) && (
+      {props.useWC ? (
+        <>
+          <FwForm
+            ref={formRef}
+            initialValues={initialFormValue || {}}
+            formSchema={{
+              name: 'Form',
+              fields
+            }}
+          />
           <Row
             justify="end"
             gutter={[8, 8]}
@@ -386,52 +456,94 @@ export function MetaDrivenForm({
               borderTop: "1px solid #f0f2f5"
             }}
           >
-            {!props.showFullForm && !props.closeModal && meta.length > 4 && (
-              <Col>
-                <Button
-                  aria-label={showLess ? "Show More Fields" : "Show Less Fields"}
-                  onClick={() => setShowLess(!showLess)}
-                >
-                  {showLess ? "Show More" : "Show Less"}
-                </Button>
-              </Col>
-            )}
-            {props.closeModal && (
-              <Col>
-                <Button
-                  type="ghost"
-                  aria-label="Cancel"
-                  danger
-                  onClick={() => {
-                    formInstance.resetFields()
-                    props.closeModal && props.closeModal()
-                  }}
-                >
-                  Cancel
-                </Button>
-              </Col>
-            )}
-            {showClearbutton && (
-              <Col>
-                <Button danger type="primary" onClick={clearParams}>
-                  {clearButtonLabel}
-                </Button>
-              </Col>
-            )}
             <Col>
-              <Button
-                aria-controls={props.applyButtonAriaControl}
-                type="primary"
-                form={formId}
-                aria-label={applyButtonLabel}
-                onClick={() => applyChanges()}
-              >
-                {applyButtonLabel}
-              </Button>
+              <FwButton color="secondary" onClick={() => setInitialFormValue({})}>Clear</FwButton>
+            </Col>
+            <Col>
+              <FwButton color="primary" onClick={handleSubmit}>Search</FwButton>
             </Col>
           </Row>
-        )}
-      </Form>
+        </>
+      ) :
+        <Form
+          id={formId}
+          layout="horizontal"
+          initialValues={initialFormValue}
+          form={formInstance}
+          scrollToFirstError
+          style={{
+            ...(props.isModal && { maxHeight: "66vh", overflowY: "auto" }),
+            background: "white",
+            borderRadius: "4px",
+            padding: "10px"
+          }}
+          onValuesChange={handleValuesChange}
+        >
+          <FormError errorMessages={props.errorMessages} />
+          <SearchFormFields
+            meta={meta}
+            isHorizontal={props.isHorizontal}
+            formInstance={formInstance}
+            clearTrigger={clearTrigger}
+            showLess={showLess}
+            dependencyValue={dependencyValue}
+          />
+          {!(props.isModal || props.closeModal) && (
+            <Row
+              justify="end"
+              gutter={[8, 8]}
+              style={{
+                padding: "10px",
+                borderTop: "1px solid #f0f2f5"
+              }}
+            >
+              {!props.showFullForm && !props.closeModal && meta.length > 4 && (
+                <Col>
+                  <Button
+                    aria-label={showLess ? "Show More Fields" : "Show Less Fields"}
+                    onClick={() => setShowLess(!showLess)}
+                  >
+                    {showLess ? "Show More" : "Show Less"}
+                  </Button>
+                </Col>
+              )}
+              {props.closeModal && (
+                <Col>
+                  <Button
+                    type="ghost"
+                    aria-label="Cancel"
+                    danger
+                    onClick={() => {
+                      formInstance.resetFields()
+                      props.closeModal && props.closeModal()
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                </Col>
+              )}
+              {showClearbutton && (
+                <Col>
+                  <Button danger type="primary" onClick={clearParams}>
+                    {clearButtonLabel}
+                  </Button>
+                </Col>
+              )}
+              <Col>
+                <Button
+                  aria-controls={props.applyButtonAriaControl}
+                  type="primary"
+                  form={formId}
+                  aria-label={applyButtonLabel}
+                  onClick={() => applyChanges()}
+                >
+                  {applyButtonLabel}
+                </Button>
+              </Col>
+            </Row>
+          )}
+        </Form>
+      }
     </Card>
   )
 }
