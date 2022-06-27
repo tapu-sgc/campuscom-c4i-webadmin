@@ -28,6 +28,10 @@ export const CourseQueries:ICourseQueries = {
       data: resp.data.map((i: any) => ({
         ...i,
         course_provider: i.provider,
+        __meta: {
+          id: i.id,
+          name: i.title
+        }
       }))
     }) : resp)
   }, [{operation: ApiPermissionClass.Course, action: ApiPermissionAction.Read}]),

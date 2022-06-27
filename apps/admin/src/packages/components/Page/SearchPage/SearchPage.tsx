@@ -19,6 +19,7 @@ export interface ISearchListWithVisibleSearchFormProp {
   stopProducingQueryParams?: boolean
   initSearchAtMount?: boolean
   updatedParams?: (params?: any) => void
+  useWC?: boolean
 }
 
 export function SearchPage(props: ISearchListWithVisibleSearchFormProp) {
@@ -84,6 +85,7 @@ export function SearchPage(props: ISearchListWithVisibleSearchFormProp) {
                 if (newFilterValues["pagination"]) setCurrentPagination(newFilterValues["pagination"])
                 else setCurrentPagination(1)
               }}
+              useWC={props.useWC}
             />
           )}
 
@@ -92,6 +94,7 @@ export function SearchPage(props: ISearchListWithVisibleSearchFormProp) {
             setCurrentPagination={setCurrentPagination}
             {...props.tableProps}
             searchParams={searchParams}
+            useWC={props.useWC}
           />
         </>
       )}
