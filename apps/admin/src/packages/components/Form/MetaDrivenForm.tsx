@@ -46,6 +46,8 @@ import { FormEditorInput } from "./FormEditorInput"
 import { FormGroupedMultipleCheckbox } from "./FormGroupedMultipleCheckbox"
 import { FwButton, FwForm } from "@freshworks/crayons/react"
 
+export const HELPER_FIELD_PATTERN = "__##__"
+
 export function MetaDrivenForm({
   showClearbutton = true,
   applyButtonLabel = "Search",
@@ -149,7 +151,7 @@ export function MetaDrivenForm({
           ...props.defaultFormValue
         }
         for (const key in mergedParams) {
-          if (key === "" || mergedParams[key] === undefined || mergedParams[key] === null)
+          if (key === "" || mergedParams[key] === undefined || mergedParams[key] === null || key.startsWith(HELPER_FIELD_PATTERN))
             delete mergedParams[key]
         }
         if (props.currentPagination) mergedParams["pagination"] = props.currentPagination
