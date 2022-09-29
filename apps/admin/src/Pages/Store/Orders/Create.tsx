@@ -1,22 +1,23 @@
-import { Card, Col, Row } from "antd"
+import { Card, Col, notification, Row } from "antd"
 import { SidebarMenuTargetHeading } from "@packages/components/lib/SidebarNavigation/SidebarMenuTargetHeading"
 import { HelpButton } from "@packages/components/lib/Help/HelpButton"
 import { useCallback, useEffect, useState } from "react"
 import { EnrollmentQueries } from "@packages/services/lib/Api/Queries/AdminQueries/Enrollments"
 import { Alert } from "@packages/components/lib/Alert/Alert"
-import { Steppers } from "~/Component/Feature/Enrollments/Create/Steppers"
-import { StudentDataStep } from "~/Component/Feature/Enrollments/Create/StudentDataStep"
-import { PurchaserDataStep } from "~/Component/Feature/Enrollments/Create/PurchaserDataStep"
-import { ProductDataStep } from "~/Component/Feature/Enrollments/Create/ProductDataStep"
-import { RegistrationDataStep } from "~/Component/Feature/Enrollments/Create/RegistrationDataStep"
-import { AdditionalRegistrationDataStep } from "~/Component/Feature/Enrollments/Create/AdditionalRegistrationDataStep"
-import { InvoiceDataStep } from "~/Component/Feature/Enrollments/Create/InvoiceDataStep"
-import { PaymentDataStep } from "~/Component/Feature/Enrollments/Create/PaymentDataStep"
-import { StepNames } from "~/Component/Feature/Enrollments/Create/common"
-import { StoreDataStep } from "~/Component/Feature/Enrollments/Create/StoreDataStep"
+import { Steppers } from "~/Component/Feature/Orders/Create/Steppers"
+import { StudentDataStep } from "~/Component/Feature/Orders/Create/StudentDataStep"
+import { PurchaserDataStep } from "~/Component/Feature/Orders/Create/PurchaserDataStep"
+import { ProductDataStep } from "~/Component/Feature/Orders/Create/ProductDataStep"
+import { RegistrationDataStep } from "~/Component/Feature/Orders/Create/RegistrationDataStep"
+import { AdditionalRegistrationDataStep } from "~/Component/Feature/Orders/Create/AdditionalRegistrationDataStep"
+import { InvoiceDataStep } from "~/Component/Feature/Orders/Create/InvoiceDataStep"
+import { PaymentDataStep } from "~/Component/Feature/Orders/Create/PaymentDataStep"
+import { StepNames } from "~/Component/Feature/Orders/Create/common"
+import { StoreDataStep } from "~/Component/Feature/Orders/Create/StoreDataStep"
 
 export const Create = () => {
   const [currentStep, setCurrentStep] = useState(StepNames.StoreInformation)
+  const [isProcessing, setIsProcessing] = useState(false)
   const [storeData, setStoreData] = useState<Record<string, any>>()
   const [productData, setProductData] = useState<Record<string, any>[]>([])
   const [purchaserData, setPurchaserData] = useState<Record<string, any>>()
@@ -25,7 +26,7 @@ export const Create = () => {
   const [invoiceData, setInvoiceData] = useState<Record<string, any>>()
   const [couponCode, setCouponCode] = useState()
   const [orderRef, setOrderRef] = useState<string | undefined>()
-  const hasRegistrationProduct = productData.some(i => i.unit_type === "registration")
+  const hasRegistrationProduct = productData.some(i => i.unit === "registration")
 
   useEffect(() => {
     setRegistrationData(registrationData => {
@@ -44,10 +45,10 @@ export const Create = () => {
   }, [])
 
   const generateCartDetailsPayload = useCallback(() => {
-    const payload = [...productData.reduce((a, c) => {
+    return [...productData.reduce((a, c) => {
       for (const i of (c.related_products || [])) {
         a.push({
-          product_id: i.product_id,
+          product_id: i.id,
           quantity: i.quantity,
           is_related: true,
           related_to: c.id,
@@ -55,14 +56,14 @@ export const Create = () => {
           is_reservation: false
         })
       }
-      if (c.order_type === "seat") {
+      if (c.unit === "seat" || c.unit === "unit") {
         a.push({
           product_id: c.id,
-          quantity: c.number_of_seats,
+          quantity: c.quantity,
           is_related: false,
           related_to: "",
           student_email: "",
-          is_reservation: true
+          is_reservation: c.unit === "seat"
         })
       }
       return a
@@ -74,8 +75,6 @@ export const Create = () => {
       student_email: "",
       is_reservation: false
     }))]
-
-    return payload
   }, [registrationData, productData])
 
   const generateStudentDetailsPayload = useCallback(() => {
@@ -110,14 +109,18 @@ export const Create = () => {
       payment_ref: values.payment_ref,
       payment_note: values.payment_note,
       purchaser: {
-        purchasing_for: purchaserData?.purchasing_for,
+        type: purchaserData?.purchasing_for,
         ref: purchaserData?.company
       }
     }
+    setIsProcessing(true)
     const resp = await EnrollmentQueries.create({ data: payload })
+    setIsProcessing(false)
     if (resp.success && resp.data.order_ref) {
       setOrderRef(resp.data.order_ref)
       reset()
+    } else {
+      notification.error({ message: "Something went wrong!" })
     }
   }, [generateCartDetailsPayload, generateStudentDetailsPayload, productData, storeData, purchaserData, reset])
 
@@ -137,7 +140,7 @@ export const Create = () => {
           <Row>
             <Col flex="auto">
               <SidebarMenuTargetHeading level={1} targetID="navigation">
-                Create an Enrollment
+                Create an Order
               </SidebarMenuTargetHeading>
             </Col>
             <Col flex="none">
@@ -205,6 +208,7 @@ export const Create = () => {
                         : currentStep === StepNames.PaymentInformation ?
                           <PaymentDataStep
                             onSubmit={handleSubmit}
+                            loading={isProcessing}
                           />
                           : null}
         </Col>
